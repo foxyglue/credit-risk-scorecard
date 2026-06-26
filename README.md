@@ -30,6 +30,14 @@ Dataset terdiri dari beberapa tabel relasional yang saling terhubung lewat `SK_I
 | `installments_payments.csv` | Riwayat pembayaran cicilan dari kredit-kredit Home Credit sebelumnya, termasuk cicilan yang terlambat/tidak dibayar. | Satu baris = satu pembayaran cicilan (atau satu cicilan yang gagal dibayar) |
 | `HomeCredit_columns_description.csv` | Deskripsi tiap kolom di seluruh file di atas — referensi penting saat feature engineering. | - |
 
+> **Catatan kerja:** sebelum membuat asumsi soal arti suatu kolom (terutama
+> kolom dengan nama ambigu seperti `EXT_SOURCE_1/2/3` atau kolom hasil
+> agregasi), cek dulu definisinya di `HomeCredit_columns_description.csv`.
+> Beberapa kolom (seperti `EXT_SOURCE_*`) didefinisikan resmi hanya sebagai
+> "normalized score from external data source" tanpa detail metodologi —
+> ini perlu disebutkan eksplisit di insight ketimbang menebak sumber/cara
+> hitungnya.
+
 **Implikasi untuk feature engineering:** karena tabel pendukung (`bureau`, `previous_application`, dst) punya relasi *one-to-many* terhadap `SK_ID_CURR`, semua tabel ini harus diagregasi dulu (count, mean, max, dsb) menjadi satu baris per nasabah sebelum di-merge ke tabel utama — inilah yang dilakukan oleh `src/data.py::build_master_table()`.
 
 ## Struktur Project

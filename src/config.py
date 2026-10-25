@@ -33,6 +33,9 @@ RAW_FILES = {
     "credit_card_balance": RAW_DATA_DIR / "credit_card_balance.csv",
     "pos_cash_balance": RAW_DATA_DIR / "POS_CASH_balance.csv",
 }
+CORE_RAW_FILES = {name: RAW_FILES[name] for name in (
+    "application_train", "bureau", "previous_application"
+)}
 
 # ---------------------------------------------------------------------------
 # Kolom kunci

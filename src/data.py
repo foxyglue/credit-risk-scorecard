@@ -19,8 +19,26 @@ from pathlib import Path
 from typing import Dict
 
 import pandas as pd
+from sklearn.model_selection import train_test_split
 
-from src.config import RAW_FILES, ID_COL
+from src.config import RAW_FILES, ID_COL, TARGET_COL, RANDOM_SEED, TEST_SIZE
+
+
+def split_application_ids(application: pd.DataFrame) -> pd.DataFrame:
+    """Stable stratified split; independent of input row order."""
+    rows = application[[ID_COL, TARGET_COL]].sort_values(ID_COL)
+    if rows[ID_COL].isna().any() or rows[ID_COL].duplicated().any():
+        raise ValueError("Application IDs must be present and unique.")
+    if rows[TARGET_COL].isna().any() or set(rows[TARGET_COL].unique()) != {0, 1}:
+        raise ValueError("TARGET must contain both binary classes, without missing values.")
+    train_ids, test_ids = train_test_split(
+        rows[ID_COL], test_size=TEST_SIZE, random_state=RANDOM_SEED,
+        stratify=rows[TARGET_COL],
+    )
+    manifest = rows[[ID_COL]].copy()
+    manifest["split"] = manifest[ID_COL].isin(test_ids).map({False: "train", True: "test"})
+    assert set(train_ids).isdisjoint(test_ids)
+    return manifest.reset_index(drop=True)
 
 
 def load_raw_tables(files: Dict[str, Path] = RAW_FILES) -> Dict[str, pd.DataFrame]:
@@ -45,7 +63,6 @@ def load_raw_tables(files: Dict[str, Path] = RAW_FILES) -> Dict[str, pd.DataFram
         if not path.exists():
             print(f"[WARNING] File tidak ditemukan, di-skip: {path}")
             continue
-        print(f"Path: {path}") # debugging line to show the path being loaded
         tables[name] = pd.read_csv(path)
         print(f"[INFO] Loaded {name}: {tables[name].shape}")
     return tables
@@ -107,15 +124,17 @@ def build_master_table(tables: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         )
 
     master = tables["application_train"].copy()
+    if master[ID_COL].isna().any() or master[ID_COL].duplicated().any():
+        raise ValueError("Application IDs must be present and unique before merging.")
 
     if "bureau" in tables:
         bureau_agg = aggregate_bureau(tables["bureau"])
-        master = master.merge(bureau_agg, on=ID_COL, how="left")
+        master = master.merge(bureau_agg, on=ID_COL, how="left", validate="one_to_one")
         print(f"[INFO] Setelah merge bureau: {master.shape}")
 
     if "previous_application" in tables:
         prev_agg = aggregate_previous_application(tables["previous_application"])
-        master = master.merge(prev_agg, on=ID_COL, how="left")
+        master = master.merge(prev_agg, on=ID_COL, how="left", validate="one_to_one")
         print(f"[INFO] Setelah merge previous_application: {master.shape}")
 
     return master

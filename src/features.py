@@ -12,6 +12,12 @@ import numpy as np
 import pandas as pd
 
 
+def safe_ratio(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
+    """Financial ratios are undefined for nonpositive or nonfinite denominators."""
+    valid = denominator.gt(0) & np.isfinite(denominator) & np.isfinite(numerator)
+    return numerator.where(valid).div(denominator.where(valid)).replace([np.inf, -np.inf], np.nan)
+
+
 def add_ratio_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Menambahkan fitur rasio finansial dasar yang umum dipakai di
@@ -21,15 +27,14 @@ def add_ratio_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
 
-    # Debt-to-income: makin tinggi, makin berisiko
-    df["DEBT_TO_INCOME_RATIO"] = df["AMT_CREDIT"] / df["AMT_INCOME_TOTAL"].replace(0, np.nan)
+    # Requested credit / reported income; not the client's total debt service.
+    df["DEBT_TO_INCOME_RATIO"] = safe_ratio(df["AMT_CREDIT"], df["AMT_INCOME_TOTAL"])
 
-    # Annuity terhadap income: seberapa berat beban cicilan bulanan
-    # relatif ke pendapatan nasabah
-    df["ANNUITY_TO_INCOME_RATIO"] = df["AMT_ANNUITY"] / df["AMT_INCOME_TOTAL"].replace(0, np.nan)
+    # Periods are not specified in the source dictionary; do not claim monthly DTI.
+    df["ANNUITY_TO_INCOME_RATIO"] = safe_ratio(df["AMT_ANNUITY"], df["AMT_INCOME_TOTAL"])
 
-    # Credit terhadap annuity: mengindikasikan tenor implisit pinjaman
-    df["CREDIT_TO_ANNUITY_RATIO"] = df["AMT_CREDIT"] / df["AMT_ANNUITY"].replace(0, np.nan)
+    # A term proxy, not a contractual loan duration.
+    df["CREDIT_TO_ANNUITY_RATIO"] = safe_ratio(df["AMT_CREDIT"], df["AMT_ANNUITY"])
 
     return df
 
@@ -48,12 +53,13 @@ def add_employment_features(df: pd.DataFrame) -> pd.DataFrame:
     # Flag anomali DAYS_EMPLOYED sebelum dikonversi
     df["IS_EMPLOYMENT_ANOMALY"] = (df["DAYS_EMPLOYED"] == 365243).astype(int)
     days_employed_clean = df["DAYS_EMPLOYED"].replace(365243, np.nan)
+    days_employed_clean = days_employed_clean.where(days_employed_clean <= 0)
 
     df["EMPLOYMENT_LENGTH_YEARS"] = -days_employed_clean / 365.25
     df["AGE_YEARS"] = -df["DAYS_BIRTH"] / 365.25
 
     # Rasio masa kerja terhadap usia -- proxy stabilitas pekerjaan
-    df["EMPLOYMENT_TO_AGE_RATIO"] = df["EMPLOYMENT_LENGTH_YEARS"] / df["AGE_YEARS"]
+    df["EMPLOYMENT_TO_AGE_RATIO"] = safe_ratio(df["EMPLOYMENT_LENGTH_YEARS"], df["AGE_YEARS"])
 
     return df
 
@@ -70,7 +76,7 @@ def add_bureau_derived_features(df: pd.DataFrame) -> pd.DataFrame:
 
     if {"bureau_amt_credit_sum_mean", "AMT_INCOME_TOTAL"}.issubset(df.columns):
         df["BUREAU_CREDIT_TO_INCOME_RATIO"] = (
-            df["bureau_amt_credit_sum_mean"] / df["AMT_INCOME_TOTAL"].replace(0, np.nan)
+            safe_ratio(df["bureau_amt_credit_sum_mean"], df["AMT_INCOME_TOTAL"])
         )
 
     if "bureau_credit_count" in df.columns:
@@ -98,7 +104,7 @@ def add_property_missing_flags(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
 
-    property_cols = [c for c in df.columns if any(
+    property_cols = [c for c in df.columns if not c.endswith("_MISSING") and any(
         keyword in c for keyword in [
             "COMMONAREA", "LIVINGAPARTMENTS", "LIVINGAREA",
             "NONLIVINGAPARTMENTS", "NONLIVINGAREA",
